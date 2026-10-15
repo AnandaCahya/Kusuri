@@ -51,10 +51,10 @@ temp/
 tmp/
 
 # Application Uploads & Runtime Data
-apps/backend/data/
-apps/backend/uploads/
-data/
-uploads/
+/apps/backend/data/
+/apps/backend/uploads/
+/data/
+/uploads/
 *.sqlite
 *.sqlite3
-pgdata/
+/pgdata/
