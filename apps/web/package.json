@@ -1,0 +1,30 @@
+{
+  "name": "@kusuri/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "NODE_ENV=production bun src/index.ts",
+    "build": "bun run build.ts",
+    "typecheck": "bun check"
+  },
+  "dependencies": {
+    "bun-plugin-tailwind": "^0.1.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.55.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.1.11"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/bun": "latest",
+    "@types/react": "^19",
+    "@types/react-dom": "^19"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  }
+}
