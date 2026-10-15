@@ -1,0 +1,38 @@
+name: Web Dashboard CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "package.json"
+      - ".github/workflows/web-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "package.json"
+      - ".github/workflows/web-ci.yml"
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: apps/web
+        run: bun run typecheck
+
+      - name: Build Web Application
+        working-directory: apps/web
+        run: bun run build

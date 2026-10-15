@@ -1,0 +1,25 @@
+[Unit]
+Description=Kusuri Backend Sync Server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=kusuri
+Group=kusuri
+WorkingDirectory=/opt/kusuri/apps/backend
+ExecStart=/usr/local/bin/kusuri-backend
+Restart=always
+RestartSec=5s
+
+EnvironmentFile=/opt/kusuri/apps/backend/.env
+
+# Security Sandbox
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/kusuri/apps/backend/data
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

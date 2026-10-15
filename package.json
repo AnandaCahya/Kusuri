@@ -1,0 +1,33 @@
+{
+  "name": "kusuri-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kusuri — Multi-device synchronization, remote clipboard, and file transfer monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "bun --cwd apps/web dev",
+    "build:web": "bun --cwd apps/web build",
+    "check:web": "bun --cwd apps/web typecheck",
+    "dev:backend": "cargo run --bin backend",
+    "build:backend": "cargo build --release",
+    "check:backend": "cargo check",
+    "test:backend": "cargo test",
+    "check": "bun run check:web && bun run check:backend",
+    "build": "bun run build:web && bun run build:backend"
+  },
+  "keywords": [
+    "kusuri",
+    "monorepo",
+    "rust",
+    "axum",
+    "react",
+    "bun",
+    "cross-platform",
+    "clipboard-sync",
+    "file-transfer"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,55 @@
+services:
+  kusuri-db:
+    image: postgres:16-alpine
+    container_name: kusuri-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: kusurisecret
+      POSTGRES_DB: kusuri
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kusuri"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  kusuri-backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: kusuri-backend
+    restart: unless-stopped
+    depends_on:
+      kusuri-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:kusurisecret@kusuri-db:5432/kusuri
+      JWT_SECRET: ${JWT_SECRET:-kusuri_production_jwt_secret_change_me_super_secure_key}
+      HOST: 0.0.0.0
+      PORT: 8080
+      UPLOAD_DIR: /app/data/uploads
+      MAX_UPLOAD_SIZE: 104857600
+      RUST_LOG: info,backend=debug,tower_http=info
+    ports:
+      - "8080:8080"
+    volumes:
+      - kusuri_uploads:/app/data/uploads
+
+  kusuri-web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: kusuri-web
+    restart: unless-stopped
+    depends_on:
+      - kusuri-backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:
+  kusuri_uploads:

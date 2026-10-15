@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/backend",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Kusuri Contributors"]
+license = "MIT"
+repository = "https://github.com/kusuri-app/kusuri"
+homepage = "https://kusuri.app"
+readme = "README.md"

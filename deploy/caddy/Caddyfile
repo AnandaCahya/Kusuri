@@ -1,0 +1,30 @@
+# Caddyfile untuk Kusuri
+# Ganti kusuri.example.com dengan domain/subdomain Anda
+
+kusuri.example.com {
+    # Encode respons dengan Gzip dan Zstandard
+    encode zstd gzip
+
+    # Proxy WebSocket endpoint ke Backend Axum
+    @websockets {
+        header Connection *Upgrade*
+        header Upgrade    websocket
+    }
+    reverse_proxy @websockets kusuri-backend:8080
+
+    # Proxy REST API endpoint ke Backend Axum
+    handle /api/* {
+        reverse_proxy kusuri-backend:8080
+    }
+
+    # Proxy Web Dashboard UI
+    handle {
+        reverse_proxy kusuri-web:80
+    }
+
+    # Log akses
+    log {
+        output file /var/log/caddy/kusuri_access.log
+        format console
+    }
+}
