@@ -10,6 +10,7 @@ import com.anandacahya.kusuri.data.repository.ServerRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -70,7 +71,7 @@ class KusuriNotificationListenerService : NotificationListenerService() {
         serviceScope.launch {
             try {
                 val serverRepo = ServerRepository(applicationContext)
-                val activeServer = serverRepo.getActiveServer() ?: return@launch
+                val activeServer = serverRepo.activeServerFlow.firstOrNull() ?: return@launch
 
                 val api = apiFactory.createService(activeServer)
                 val req = IngestNotificationRequest(
