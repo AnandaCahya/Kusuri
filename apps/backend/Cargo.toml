@@ -27,3 +27,6 @@ tower-http = { version = "0.7.1", features = ["cors", "trace", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { version = "1.28.0", features = ["v4", "serde"] }
+aes = "0.8"
+cbc = "0.1"
+base64 = "0.22"

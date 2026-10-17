@@ -356,6 +356,11 @@ pub fn generate_search_queries(marketing_name: &str, retail_branding: Option<&st
                 _ => &[],
             };
 
+            // Bare number query for spec/model lookup prioritized before series expansions
+            if !queries.contains(num) {
+                queries.push(num.clone());
+            }
+
             for series in series_hints {
                 let hint_query = format!("{} {}", series, num);
                 if !queries.contains(&hint_query) {
@@ -365,11 +370,6 @@ pub fn generate_search_queries(marketing_name: &str, retail_branding: Option<&st
                 if !queries.contains(&hint_with_brand) {
                     queries.push(hint_with_brand);
                 }
-            }
-
-            // Bare number query for spec/model lookup
-            if !queries.contains(num) {
-                queries.push(num.clone());
             }
         }
     }

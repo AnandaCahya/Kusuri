@@ -295,6 +295,57 @@ pub async fn get_or_fetch_gsmarena_specs(
     .await?;
 
     info!("Successfully stored collective unified specifications for '{}'", clean_name);
+
+    if let Some(ref alias) = resolved_alias {
+        if alias.to_lowercase() != clean_name.to_lowercase() {
+            let _ = sqlx::query(
+                r#"INSERT INTO device_catalog_specs (
+                    id, marketing_name, retail_branding, gsmarena_url, chipset, cpu, gpu,
+                    display_type, display_size, display_resolution, os_original,
+                    battery_spec, charging_spec, camera_spec, memory_spec, image_url, raw_specs,
+                    created_at, updated_at
+                ) VALUES (
+                    gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW()
+                )
+                ON CONFLICT (marketing_name) DO UPDATE SET
+                    retail_branding = COALESCE(EXCLUDED.retail_branding, device_catalog_specs.retail_branding),
+                    gsmarena_url = COALESCE(EXCLUDED.gsmarena_url, device_catalog_specs.gsmarena_url),
+                    chipset = COALESCE(EXCLUDED.chipset, device_catalog_specs.chipset),
+                    cpu = COALESCE(EXCLUDED.cpu, device_catalog_specs.cpu),
+                    gpu = COALESCE(EXCLUDED.gpu, device_catalog_specs.gpu),
+                    display_type = COALESCE(EXCLUDED.display_type, device_catalog_specs.display_type),
+                    display_size = COALESCE(EXCLUDED.display_size, device_catalog_specs.display_size),
+                    display_resolution = COALESCE(EXCLUDED.display_resolution, device_catalog_specs.display_resolution),
+                    battery_spec = COALESCE(EXCLUDED.battery_spec, device_catalog_specs.battery_spec),
+                    charging_spec = COALESCE(EXCLUDED.charging_spec, device_catalog_specs.charging_spec),
+                    camera_spec = COALESCE(EXCLUDED.camera_spec, device_catalog_specs.camera_spec),
+                    memory_spec = COALESCE(EXCLUDED.memory_spec, device_catalog_specs.memory_spec),
+                    image_url = COALESCE(EXCLUDED.image_url, device_catalog_specs.image_url),
+                    raw_specs = EXCLUDED.raw_specs,
+                    updated_at = NOW()"#,
+            )
+            .bind(alias)
+            .bind(retail_branding)
+            .bind(&inserted.gsmarena_url)
+            .bind(&inserted.chipset)
+            .bind(&inserted.cpu)
+            .bind(&inserted.gpu)
+            .bind(&inserted.display_type)
+            .bind(&inserted.display_size)
+            .bind(&inserted.display_resolution)
+            .bind(&inserted.os_original)
+            .bind(&inserted.battery_spec)
+            .bind(&inserted.charging_spec)
+            .bind(&inserted.camera_spec)
+            .bind(&inserted.memory_spec)
+            .bind(&inserted.image_url)
+            .bind(&inserted.raw_specs)
+            .execute(pool)
+            .await;
+            info!("Stored secondary alias device catalog spec for '{}' -> '{}'", clean_name, alias);
+        }
+    }
+
     Ok(inserted)
 }
 

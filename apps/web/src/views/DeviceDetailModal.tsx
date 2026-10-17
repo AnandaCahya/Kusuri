@@ -231,17 +231,96 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({
                 {/* OS Details */}
                 <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80">
                   <div className="text-xs text-slate-400 mb-1 flex items-center gap-1.5">
-                    <Cpu className="w-4 h-4 text-sky-400" /> Sistem Operasi
+                    <Cpu className="w-4 h-4 text-sky-400" /> Sistem Operasi & Host
                   </div>
                   <div className="font-medium text-slate-200 text-sm">
                     {telemetry?.os_version || device.device_type}
                   </div>
-                  {telemetry?.android_sdk && (
-                    <span className="text-[11px] text-slate-500">
-                      Android SDK: {telemetry.android_sdk}
-                    </span>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-400">
+                    {telemetry?.architecture && (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                        {telemetry.architecture}
+                      </span>
+                    )}
+                    {telemetry?.hostname && (
+                      <span>Host: <span className="font-mono text-slate-300">{telemetry.hostname}</span></span>
+                    )}
+                    {telemetry?.uptime_formatted && (
+                      <span>• Uptime: {telemetry.uptime_formatted}</span>
+                    )}
+                    {telemetry?.android_sdk && (
+                      <span>Android SDK: {telemetry.android_sdk}</span>
+                    )}
+                  </div>
                 </div>
+
+                {/* Desktop Hardware specifics: CPU & GPU */}
+                {(telemetry?.cpu_model || telemetry?.gpu_model) && (
+                  <div className="sm:col-span-2 p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                    <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                      <Cpu className="w-4 h-4 text-emerald-400" /> Prosesor & Grafis
+                    </div>
+                    {telemetry.cpu_model && (
+                      <div className="text-xs">
+                        <span className="text-slate-400">CPU: </span>
+                        <span className="font-medium text-slate-200">{telemetry.cpu_model}</span>
+                        {telemetry.cpu_cores && (
+                          <span className="text-slate-400 ml-1.5">
+                            ({telemetry.cpu_cores} Cores / {telemetry.cpu_logical_cores || telemetry.cpu_cores} Threads
+                            {telemetry.cpu_frequency_mhz ? ` @ ${telemetry.cpu_frequency_mhz} MHz` : ""})
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {telemetry.gpu_model && (
+                      <div className="text-xs">
+                        <span className="text-slate-400">GPU / Display Adapter: </span>
+                        <span className="font-medium text-slate-200">{telemetry.gpu_model}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Desktop Disks / Partition Breakdown */}
+                {telemetry?.disks_info && (
+                  <div className="sm:col-span-2 p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                    <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                      <HardDrive className="w-4 h-4 text-violet-400" /> Partisi Penyimpanan (Disks)
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {Array.isArray(telemetry.disks_info) ? (
+                        telemetry.disks_info.map((d: any, idx: number) => {
+                          const diskTotal = d.total_mb || 0;
+                          const diskFree = d.free_mb || 0;
+                          const diskUsed = diskTotal - diskFree;
+                          const diskPct = diskTotal > 0 ? Math.round((diskUsed / diskTotal) * 100) : 0;
+                          return (
+                            <div key={idx} className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+                              <div className="flex justify-between items-center font-medium text-slate-200">
+                                <span>{d.name || d.mount_point || `Drive ${idx + 1}`}</span>
+                                <span className="text-[10px] text-slate-400">{d.file_system || ""}</span>
+                              </div>
+                              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden my-1.5">
+                                <div
+                                  className="bg-violet-500 h-full rounded-full"
+                                  style={{ width: `${Math.min(diskPct, 100)}%` }}
+                                />
+                              </div>
+                              <div className="text-[10px] text-slate-400 flex justify-between">
+                                <span>{(diskUsed / 1024).toFixed(1)} GB used</span>
+                                <span>{(diskTotal / 1024).toFixed(1)} GB total</span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-xs text-slate-300 font-mono">
+                          {typeof telemetry.disks_info === "string" ? telemetry.disks_info : JSON.stringify(telemetry.disks_info)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

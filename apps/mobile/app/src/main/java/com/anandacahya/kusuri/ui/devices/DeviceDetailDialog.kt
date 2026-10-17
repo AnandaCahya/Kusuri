@@ -160,8 +160,39 @@ fun DeviceDetailDialog(
                             SpecRow("Storage", "${live.storage_used_mb ?: 0} MB / ${live.storage_total_mb ?: 0} MB")
                             SpecRow("Battery Level", "${live.battery_percent?.toInt() ?: 0}% (${if (live.battery_charging == true) "Charging" else "Discharging"})")
                             SpecRow("Battery Temp", "${live.battery_temp_c ?: 0f} °C")
-                            SpecRow("Battery Health", live.battery_health ?: "Good")
-                            SpecRow("Screen Refresh Rate", "${live.screen_refresh_rate ?: 0f} Hz")
+                            if (!live.hostname.isNullOrBlank()) {
+                                SpecRow("Hostname", live.hostname)
+                            }
+                            if (!live.architecture.isNullOrBlank()) {
+                                SpecRow("Architecture", live.architecture)
+                            }
+                            if (!live.cpu_model.isNullOrBlank()) {
+                                val coresStr = if (live.cpu_cores != null) "${live.cpu_cores} Cores / ${live.cpu_logical_cores ?: live.cpu_cores} Threads" else ""
+                                val freqStr = if (live.cpu_frequency_mhz != null && live.cpu_frequency_mhz > 0) "${live.cpu_frequency_mhz} MHz" else ""
+                                val detail = listOf(coresStr, freqStr).filter { it.isNotBlank() }.joinToString(" • ")
+                                SpecRow("CPU Model", "${live.cpu_model}${if (detail.isNotBlank()) " ($detail)" else ""}")
+                            }
+                            if (!live.gpu_model.isNullOrBlank()) {
+                                SpecRow("GPU Adapter", live.gpu_model)
+                            }
+                            if (!live.uptime_formatted.isNullOrBlank()) {
+                                SpecRow("System Uptime", live.uptime_formatted)
+                            }
+                            if (!live.kernel_version.isNullOrBlank()) {
+                                SpecRow("Kernel Version", live.kernel_version)
+                            }
+                            if (!live.network_type.isNullOrBlank()) {
+                                SpecRow("Network", live.network_type)
+                            }
+                            if (!live.ip_address.isNullOrBlank()) {
+                                SpecRow("IP Address", live.ip_address)
+                            }
+                            if (live.screen_refresh_rate != null && live.screen_refresh_rate > 0f) {
+                                SpecRow("Screen Refresh Rate", "${live.screen_refresh_rate} Hz")
+                            }
+                            if (!live.disks_info.isNullOrBlank()) {
+                                SpecRow("Disks / Partitions", live.disks_info)
+                            }
                             SpecRow("Last Sync", live.updated_at ?: "-")
                         } else {
                             Text(

@@ -1,9 +1,13 @@
 use crate::error::AppError;
 use crate::services::matcher::{calculate_smart_match_score, generate_search_queries, CandidateDevice};
 pub use crate::services::specs_aggregator::{get_or_fetch_gsmarena_specs, DeviceCatalogSpecs};
+use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use base64::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;
 use tracing::{info, warn};
+
+type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
 #[allow(dead_code)]
 #[derive(Default, Clone, Debug)]
@@ -26,6 +30,87 @@ pub struct GsmArenaSpecResult {
     pub raw_map: HashMap<String, String>,
 }
 
+/// Decrypts AES-128-CBC obfuscated search results from GSM Arena mobile resl.php3
+pub fn decrypt_gsmarena_search_payload(html: &str) -> Option<String> {
+    let key_re = Regex::new(r#"const\s+KEY\s*=\s*["']([^"']+)["']"#).ok()?;
+    let iv_re = Regex::new(r#"const\s+IV\s*=\s*["']([^"']+)["']"#).ok()?;
+    let data_re = Regex::new(r#"const\s+DATA\s*=\s*["']([^"']+)["']"#).ok()?;
+
+    let key_b64 = key_re.captures(html)?.get(1)?.as_str();
+    let iv_b64 = iv_re.captures(html)?.get(1)?.as_str();
+    let data_b64 = data_re.captures(html)?.get(1)?.as_str();
+
+    let key_bytes = BASE64_STANDARD.decode(key_b64).ok()?;
+    let iv_bytes = BASE64_STANDARD.decode(iv_b64).ok()?;
+    let mut data_bytes = BASE64_STANDARD.decode(data_b64).ok()?;
+
+    if key_bytes.len() != 16 || iv_bytes.len() != 16 {
+        return None;
+    }
+
+    let cipher = Aes128CbcDec::new_from_slices(&key_bytes, &iv_bytes).ok()?;
+    let decrypted = cipher.decrypt_padded_mut::<Pkcs7>(&mut data_bytes).ok()?;
+    String::from_utf8(decrypted.to_vec()).ok()
+}
+
+/// Helper function to parse candidate device anchors from raw or decrypted HTML
+fn parse_candidates_from_html(
+    html: &str,
+    target_name: &str,
+    retail_branding: Option<&str>,
+    out_candidates: &mut Vec<CandidateDevice>,
+) {
+    let anchor_re = match Regex::new(
+        r#"<a\s+href=["']?([a-zA-Z0-9_\(\)\+\-]+-[0-9]+\.php)["']?[^>]*>([\s\S]*?)</a>"#,
+    ) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+
+    let title_strong_re = Regex::new(r#"<strong>([^<]+)</strong>"#).unwrap();
+    let title_attr_re = Regex::new(r#"title=["']([^"']+)["']"#).unwrap();
+    let img_src_re = Regex::new(r#"<img[^>]+src=["']?([^"'\s>]+)"#).unwrap();
+
+    for cap in anchor_re.captures_iter(html) {
+        let url_path = match cap.get(1) {
+            Some(m) => m.as_str().to_string(),
+            None => continue,
+        };
+        if url_path.contains("-phones-") || out_candidates.iter().any(|c| c.url_path == url_path) {
+            continue;
+        }
+
+        let inner_html = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+        let image_url = img_src_re.captures(inner_html).and_then(|c| c.get(1)).map(|m| m.as_str().to_string());
+
+        let title = title_strong_re
+            .captures(inner_html)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().trim().to_string())
+            .or_else(|| {
+                title_attr_re
+                    .captures(inner_html)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str().trim().to_string())
+            })
+            .unwrap_or_else(|| {
+                url_path
+                    .split('-')
+                    .next()
+                    .unwrap_or("")
+                    .replace('_', " ")
+            });
+
+        let score = calculate_smart_match_score(target_name, &title, retail_branding);
+        out_candidates.push(CandidateDevice {
+            title,
+            url_path,
+            image_url,
+            score,
+        });
+    }
+}
+
 /// Dynamic GSM Arena Scraper using Smart Selective Candidate Selection
 pub async fn scrape_gsmarena(
     marketing_name: &str,
@@ -40,7 +125,8 @@ pub async fn scrape_gsmarena(
     let search_queries = generate_search_queries(marketing_name, retail_branding);
     let mut found_candidates = Vec::new();
 
-    for query in search_queries {
+    // 1. Pass 1: Quick Search by marketing name
+    for query in &search_queries {
         let search_url = format!(
             "https://m.gsmarena.com/results.php3?sQuickSearch=yes&sName={}",
             query.replace(' ', "+")
@@ -49,7 +135,7 @@ pub async fn scrape_gsmarena(
         let resp = match client.get(&search_url).send().await {
             Ok(r) => r,
             Err(e) => {
-                warn!("Search query '{}' failed on GSM Arena: {}", query, e);
+                warn!("Quick search query '{}' failed on GSM Arena: {}", query, e);
                 continue;
             }
         };
@@ -63,43 +149,56 @@ pub async fn scrape_gsmarena(
             return Err(AppError::NotFound("GSM Arena requested Cloudflare verification".to_string()));
         }
 
-        // Pattern matching candidate items in mobile HTML:
-        let item_re = Regex::new(
-            r#"<a\s+href=["']?([a-zA-Z0-9_\(\)\+\-]+-[0-9]+\.php)["']?[^>]*>(?:<img[^>]+src=["']?([^"'\s>]+)["']?[^>]+title=["']([^"']+)["'])?"#,
-        )
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-        for cap in item_re.captures_iter(&html) {
-            let url_path = match cap.get(1) {
-                Some(m) => m.as_str().to_string(),
-                None => continue,
-            };
-
-            // Filter out maker/brand listing links
-            if url_path.contains("-phones-") {
-                continue;
-            }
-
-            let image_url = cap.get(2).map(|m| m.as_str().to_string());
-            let title = cap.get(3).map(|m| m.as_str().to_string()).unwrap_or_else(|| {
-                url_path
-                    .split('-')
-                    .next()
-                    .unwrap_or("")
-                    .replace('_', " ")
-            });
-
-            let score = calculate_smart_match_score(marketing_name, &title, retail_branding);
-            found_candidates.push(CandidateDevice {
-                title,
-                url_path,
-                image_url,
-                score,
-            });
+        // Check if response contains encrypted script payload
+        if let Some(decrypted) = decrypt_gsmarena_search_payload(&html) {
+            parse_candidates_from_html(&decrypted, marketing_name, retail_branding, &mut found_candidates);
+        } else {
+            parse_candidates_from_html(&html, marketing_name, retail_branding, &mut found_candidates);
         }
 
         if found_candidates.iter().any(|c| c.score >= 15.0) {
             break;
+        }
+    }
+
+    // 2. Pass 2: Fallback to full model-code & specs search (resl.php3) if no high-confidence match found
+    if found_candidates.is_empty() || !found_candidates.iter().any(|c| c.score >= 15.0) {
+        info!(
+            "No high-confidence candidate for '{}' in quick search. Querying GSM Arena full-text search (resl.php3)...",
+            marketing_name
+        );
+        for query in &search_queries {
+            let search_url = format!(
+                "https://m.gsmarena.com/resl.php3?sSearch={}",
+                query.replace(' ', "+")
+            );
+
+            let resp = match client.get(&search_url).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("Full search query '{}' failed on GSM Arena: {}", query, e);
+                    continue;
+                }
+            };
+
+            let html = match resp.text().await {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+
+            if html.contains("cf-turnstile") || html.contains("Turnstile check") {
+                return Err(AppError::NotFound("GSM Arena requested Cloudflare verification".to_string()));
+            }
+
+            if let Some(decrypted) = decrypt_gsmarena_search_payload(&html) {
+                parse_candidates_from_html(&decrypted, marketing_name, retail_branding, &mut found_candidates);
+            } else {
+                parse_candidates_from_html(&html, marketing_name, retail_branding, &mut found_candidates);
+            }
+
+            if found_candidates.iter().any(|c| c.score >= 15.0) {
+                break;
+            }
         }
     }
 
@@ -126,7 +225,7 @@ pub async fn scrape_gsmarena(
             marketing_name, best_candidate.score
         );
 
-        for cand in found_candidates.iter().take(3) {
+        for cand in found_candidates.iter().take(4) {
             let test_url = format!("https://m.gsmarena.com/{}", cand.url_path);
             if let Ok(resp) = client.get(&test_url).send().await {
                 if let Ok(html) = resp.text().await {
@@ -249,9 +348,18 @@ pub async fn scrape_gsmarena(
 
     let models = specs_map.get("models").cloned();
 
+    // Extract official commercial marketing name from detail page h1 if available
+    let h1_re = Regex::new(r#"<h1[^>]*class=["']specs-phone-name-title["'][^>]*>([\s\S]*?)</h1>"#).unwrap();
+    let detail_commercial_name = h1_re
+        .captures(&detail_html)
+        .and_then(|c| c.get(1))
+        .map(|m| clean_html_tags(m.as_str()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or(best_candidate.title);
+
     Ok(GsmArenaSpecResult {
         source_url: detail_url,
-        commercial_name: Some(best_candidate.title),
+        commercial_name: Some(detail_commercial_name),
         chipset: specs_map.get("chipset").cloned().or_else(|| specs_map.get("chipset-hl").cloned()),
         cpu: specs_map.get("cpu").cloned(),
         gpu: specs_map.get("gpu").cloned(),
@@ -272,6 +380,26 @@ pub async fn scrape_gsmarena(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_decrypt_gsmarena_search_payload() {
+        let sample_html = r#"
+            <script>
+                const KEY  = "TK/S96tWZDDOGQqOSdc9yQ==";
+                const IV   = "KNAopee8Zuvy3FeyzIZMug==";
+                const DATA = "K1RGG6HYSnZgzbhzyqgNBvSfi8CrreMGfGOLFOSokYbrnQTJeET1A279LtnImXYw3ZpvMFIj/dpOj3clkzJ1GpDI8yHppP//b4WKX7REogsBAxSgFZDPrcYBTBtdTHlNrtkk7CeojcQ04lxTYkWbiQdLNy1Wq7Ko6Zk2QI6nyNQX6h120bSfzllvMonOuWdEvYG+lrhpQ9SsWXlTn1OJicjhaPIz/iWlzFX56b7ZAfmS6B/FQhH1ihyLYIXIaW1xgbeCatsRMjl3sa0UsU11zaheu8SbdAAzMGoX6aF7jEtdoxX8W1JTXQ9JMAkKcnE1dGe4cVld8kMz8PZl060SjmL8BSV3tLbDPDtZEBqLiISCXHpjwQKZhzxGyZ+lgcLfaHFZ8s+pSAUyRPZV2xGKD8pRykvTZu3Fi+OlxXy21qcTgnz3n9GcVP8vXE5ozNlsU5467v9ho6SFQ4eWWk6NLryVuxeC5sp+0nrM8bYW4ovSM36OgEP+m/LaYw745IK+3UVh1izrgPhxHJ1QPz0KFs+xulGoRXshaOxKtZk5yc4YAMHBYfZS6DBoBi4v6vN3gxML7AeXWlAuDogDfHTvtQz8hk8dti+DpJqQC0n01C50CYQyROtiDvRwqJtYfXFw1sj21JOkvyJ1k67NKRx0qAs7TidZ2vksJAPnL+ajkcZtG42gC2ClpIPAwz1OAfehqtHSmF8xxZQOrM2ib6UOL/tV/1hYLUJMBhx/7G+omkgqXoOEmLY9smuDn29qrZ67Br3c9i0Qc1yodcIGX1fRjN2NmpKqOJnhzd7FHeE3ZRT4M/QIL4nu64nXQKKJ/GSERpWVmxbX/pvga07LRUjHRGYWyRoekhZUyyxDt5DjA3U28E9bjkAyVlwJtsM3dyb1UVg31u7EhNeAmm8UdrgknjYtWRnstv3JKzvNgIxVE/saV9bghLbiotm5QmogVz1DMJQNbUq2o/vMldV66vfvSpz3ggZtuC61vNxsfS/hL4o9gZv9gA5JohrLO2sieFUcm6M4YNg0gouDkMsHpRRafgyB+GcK5PKDkSiU7o940PaRAiQbPERihZreOuXjHwlEhEoS97dggoQspWBmIMeZsYtYLmU/iURZqyoYDH3X2ea5QsvBcDpdT633+i/25Lh5KVl17jb+FUiLJ7bG/CGJjCuJymWfcfREWb17m86rNys=";
+            </script>
+        "#;
+        let decrypted = decrypt_gsmarena_search_payload(sample_html).expect("Decryption must succeed");
+        assert!(decrypted.contains("ZTE Blade V40 Vita"));
+        assert!(decrypted.contains("zte_blade_v40_vita-11579.php"));
+
+        let mut candidates = Vec::new();
+        parse_candidates_from_html(&decrypted, "ZTE 8045", Some("ZTE"), &mut candidates);
+        assert!(!candidates.is_empty());
+        assert_eq!(candidates[0].title, "ZTE Blade V40 Vita");
+        assert_eq!(candidates[0].url_path, "zte_blade_v40_vita-11579.php");
+    }
 
     #[tokio::test]
     async fn test_debug_live_zte_8045() {

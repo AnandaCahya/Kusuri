@@ -94,6 +94,8 @@ pub enum WsEvent {
         event: String,
         data: serde_json::Value,
     },
+    #[serde(rename = "notification_ingested")]
+    NotificationIngested(crate::models::notification::NotificationResponse),
     #[serde(rename = "error")]
     Error { message: String },
 }

@@ -85,6 +85,16 @@ export interface LiveTelemetry {
   android_sdk?: number | null;
   imei1?: string | null;
   imei2?: string | null;
+  cpu_model?: string | null;
+  cpu_cores?: number | null;
+  cpu_logical_cores?: number | null;
+  cpu_frequency_mhz?: number | null;
+  gpu_model?: string | null;
+  hostname?: string | null;
+  architecture?: string | null;
+  uptime_formatted?: string | null;
+  disks_info?: any | null;
+  network_interfaces?: any | null;
   updated_at?: string | null;
 }
 

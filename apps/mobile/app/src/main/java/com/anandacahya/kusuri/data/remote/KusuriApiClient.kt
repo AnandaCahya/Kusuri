@@ -137,6 +137,21 @@ interface KusuriApiService {
         @Body request: CommandResultRequest,
         @Header("Authorization") authHeader: String? = null
     ): GenericMessageResponse
+
+    // Notifications
+    @POST("api/notifications")
+    suspend fun postNotification(
+        @Body request: IngestNotificationRequest,
+        @Header("Authorization") authHeader: String? = null
+    ): NotificationResponse
+
+    @GET("api/notifications")
+    suspend fun getNotifications(
+        @Query("device_id") deviceId: String? = null,
+        @Query("search") search: String? = null,
+        @Query("limit") limit: Int? = null,
+        @Header("Authorization") authHeader: String? = null
+    ): List<NotificationResponse>
 }
 
 class KusuriApiClientFactory {

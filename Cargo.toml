@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "apps/backend",
+    "apps/desktop",
 ]
 
 [workspace.package]

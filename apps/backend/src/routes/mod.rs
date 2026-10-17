@@ -3,6 +3,7 @@ pub mod clipboard;
 pub mod command;
 pub mod device;
 pub mod file;
+pub mod notification;
 
 use crate::ws::handler::ws_handler;
 use crate::AppState;
@@ -49,7 +50,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // Commands
         .route("/commands", post(command::send_command))
         .route("/commands", get(command::list_commands))
-        .route("/commands/{id}/result", post(command::report_command_result));
+        .route("/commands/{id}/result", post(command::report_command_result))
+        // Notifications
+        .route("/notifications", post(notification::ingest_notification))
+        .route("/notifications", get(notification::list_notifications));
 
     Router::new()
         .nest("/api", api_routes)

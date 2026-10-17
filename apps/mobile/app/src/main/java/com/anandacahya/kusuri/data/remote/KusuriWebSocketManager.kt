@@ -1,11 +1,15 @@
 package com.anandacahya.kusuri.data.remote
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import com.anandacahya.kusuri.data.model.ClipboardItemDto
 import com.anandacahya.kusuri.data.model.ServerConfig
+import com.anandacahya.kusuri.data.telemetry.BrandDeviceResolver
+import com.anandacahya.kusuri.data.telemetry.DeviceInfoState
 import com.anandacahya.kusuri.data.telemetry.DeviceTelemetryCollector
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -15,6 +19,9 @@ import kotlinx.coroutines.flow.StateFlow
 import okhttp3.*
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.random.Random
 
 sealed class KusuriWsEvent {
     data class ClipboardUpdated(val item: ClipboardItemDto) : KusuriWsEvent()
@@ -34,16 +41,20 @@ sealed class KusuriWsEvent {
 
 class KusuriWebSocketManager(
     private val context: Context,
-    private val scope: CoroutineScope
+    externalScope: CoroutineScope? = null
 ) {
     private val TAG = "KusuriWS"
+    // Use an application-lifecycled supervisor scope so WebSocket persists regardless of UI lifecycle
+    private val scope = externalScope ?: CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(25, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     private val telemetryCollector = DeviceTelemetryCollector(context)
+    private val brandInfo = BrandDeviceResolver.resolve(context)
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected
@@ -52,25 +63,67 @@ class KusuriWebSocketManager(
     val wsEvents: SharedFlow<KusuriWsEvent> = _wsEvents
 
     private var pingJob: Job? = null
+    private var reconnectJob: Job? = null
     private var activeConfig: ServerConfig? = null
+    private var shouldAutoReconnect = false
+    private var reconnectAttempt = 0
+
+    private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            Log.d(TAG, "Network connection restored. Checking WebSocket status...")
+            if (shouldAutoReconnect && !_isConnected.value) {
+                scope.launch {
+                    delay(1000) // Brief grace period for network route stabilisation
+                    Log.d(TAG, "Triggering immediate reconnect on network available...")
+                    reconnectJob?.cancel()
+                    connectInternal()
+                }
+            }
+        }
+    }
+
+    init {
+        try {
+            connectivityManager?.registerDefaultNetworkCallback(networkCallback)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not register default network callback: ${e.message}")
+        }
+    }
 
     fun connect(serverConfig: ServerConfig) {
-        disconnect()
+        shouldAutoReconnect = true
+        reconnectAttempt = 0
         activeConfig = serverConfig
+        connectInternal()
+    }
+
+    @Synchronized
+    private fun connectInternal() {
+        val serverConfig = activeConfig ?: return
         val token = serverConfig.deviceToken ?: serverConfig.authToken
         if (token.isNullOrBlank()) {
             Log.w(TAG, "Cannot connect: Token is missing for server ${serverConfig.name}")
             return
         }
 
+        // Clean up previous connection if any
+        stopHeartbeat()
+        try {
+            webSocket?.close(1000, "Reconnecting")
+        } catch (_: Exception) {}
+        webSocket = null
+
         val wsUrl = "${serverConfig.wsUrl}?token=$token"
-        Log.d(TAG, "Connecting to $wsUrl ...")
+        Log.d(TAG, "Connecting to $wsUrl (Attempt $reconnectAttempt)...")
 
         val request = Request.Builder().url(wsUrl).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "WebSocket Connected successfully to ${serverConfig.name}")
                 _isConnected.value = true
+                reconnectAttempt = 0
+                reconnectJob?.cancel()
                 startHeartbeat()
                 // Automatically send native hardware telemetry upon connection
                 sendInitialTelemetry()
@@ -90,14 +143,37 @@ class KusuriWebSocketManager(
                 Log.d(TAG, "WS Closed: $reason")
                 _isConnected.value = false
                 stopHeartbeat()
+                scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WS Failure: ${t.message}")
                 _isConnected.value = false
                 stopHeartbeat()
+                scheduleReconnect()
             }
         })
+    }
+
+    private fun scheduleReconnect() {
+        if (!shouldAutoReconnect) return
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            reconnectAttempt++
+            // Exponential backoff: 2s, 3s, 4.5s, 6.75s, ... max 60s
+            val baseDelay = (2000L * 1.5.pow((reconnectAttempt - 1).coerceAtMost(8))).toLong()
+            val cappedDelay = min(60_000L, baseDelay)
+            val jitter = Random.nextLong(-500, 500)
+            val finalDelay = (cappedDelay + jitter).coerceAtLeast(1500L)
+
+            Log.d(TAG, "Auto-retry scheduled in ${finalDelay}ms (Attempt #$reconnectAttempt)")
+            delay(finalDelay)
+
+            if (shouldAutoReconnect && !_isConnected.value) {
+                Log.d(TAG, "Executing scheduled reconnect to ${activeConfig?.name}...")
+                connectInternal()
+            }
+        }
     }
 
     private fun handleIncomingMessage(text: String) {
@@ -195,9 +271,13 @@ class KusuriWebSocketManager(
                     "ping" -> {
                         val responseJson = JSONObject().apply {
                             put("pong", true)
-                            put("device_model", Build.MODEL)
-                            put("manufacturer", Build.MANUFACTURER)
+                            put("device_model", brandInfo.rawModel)
+                            put("brand", brandInfo.brand)
+                            put("marketing_name", brandInfo.marketingName ?: "")
+                            put("display_name", brandInfo.bestDisplayName)
+                            put("manufacturer", brandInfo.manufacturer)
                             put("android_version", Build.VERSION.RELEASE)
+                            put("kernel_version", brandInfo.kernelVersion ?: "")
                             put("timestamp", System.currentTimeMillis())
                         }
                         sendCommandResult(commandId, "completed", responseJson)
@@ -208,6 +288,7 @@ class KusuriWebSocketManager(
                             put("battery_percent", info.batteryPercent)
                             put("battery_charging", info.batteryCharging)
                             put("battery_temp_c", info.batteryTempC)
+                            put("battery_health", info.batteryHealth)
                             put("timestamp", System.currentTimeMillis())
                         }
                         sendCommandResult(commandId, "completed", responseJson)
@@ -280,26 +361,49 @@ class KusuriWebSocketManager(
         scope.launch(Dispatchers.IO) {
             try {
                 val info = telemetryCollector.collectDeviceInfo()
-                val json = JSONObject().apply {
-                    put("type", "hardware_telemetry")
-                    put("payload", JSONObject().apply {
-                        put("raw_model", info.rawModel)
-                        put("ram_total_mb", info.ramTotalMb)
-                        put("ram_used_mb", info.ramUsedMb)
-                        put("storage_total_mb", info.storageTotalMb)
-                        put("storage_used_mb", info.storageUsedMb)
-                        put("battery_percent", info.batteryPercent)
-                        put("battery_charging", info.batteryCharging)
-                        put("battery_temp_c", info.batteryTempC)
-                        put("os_version", info.androidVersion)
-                        put("android_sdk", info.sdkInt)
-                    })
-                }
-                sendMessage(json.toString())
+                sendTelemetryData(info)
                 Log.d(TAG, "Sent hardware telemetry over WS successfully.")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed sending telemetry over WS: ${e.message}")
             }
+        }
+    }
+
+    fun sendTelemetryData(info: DeviceInfoState): Boolean {
+        return try {
+            val modelForTelemetry = if (!info.marketingName.isNullOrBlank()) {
+                info.displayName
+            } else {
+                info.rawModel
+            }
+
+            val json = JSONObject().apply {
+                put("type", "hardware_telemetry")
+                put("payload", JSONObject().apply {
+                    put("raw_model", modelForTelemetry)
+                    put("ram_total_mb", info.ramTotalMb)
+                    put("ram_used_mb", info.ramUsedMb)
+                    put("ram_free_mb", info.ramFreeMb)
+                    put("storage_total_mb", info.storageTotalMb)
+                    put("storage_used_mb", info.storageUsedMb)
+                    put("storage_free_mb", info.storageFreeMb)
+                    put("battery_percent", info.batteryPercent)
+                    put("battery_charging", info.batteryCharging)
+                    put("battery_temp_c", info.batteryTempC)
+                    put("battery_health", info.batteryHealth)
+                    put("os_version", info.androidVersion)
+                    put("android_sdk", info.sdkInt)
+                    info.kernelVersion?.let { put("kernel_version", it) }
+                    info.screenResolution.takeIf { it.isNotBlank() }?.let { put("screen_resolution", it) }
+                    put("screen_refresh_rate", info.screenRefreshRate)
+                    info.ipAddress?.let { put("ip_address", it) }
+                    info.networkType?.let { put("network_type", it) }
+                })
+            }
+            sendMessage(json.toString())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating telemetry payload: ${e.message}")
+            false
         }
     }
 
@@ -315,11 +419,12 @@ class KusuriWebSocketManager(
         sendMessage(json.toString())
     }
 
-    fun sendMessage(jsonPayload: String) {
+    fun sendMessage(jsonPayload: String): Boolean {
         val sent = webSocket?.send(jsonPayload) ?: false
         if (!sent) {
             Log.w(TAG, "Message sending failed or WS not connected.")
         }
+        return sent
     }
 
     private fun startHeartbeat() {
@@ -339,6 +444,9 @@ class KusuriWebSocketManager(
     }
 
     fun disconnect() {
+        shouldAutoReconnect = false
+        reconnectJob?.cancel()
+        reconnectJob = null
         stopHeartbeat()
         try {
             webSocket?.close(1000, "Client disconnect")

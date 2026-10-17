@@ -22,10 +22,13 @@ fun PairingScreen(
     val scope = rememberCoroutineScope()
     val apiClientFactory = remember { KusuriApiClientFactory() }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val brandInfo = remember { com.anandacahya.kusuri.data.telemetry.BrandDeviceResolver.resolve(context) }
+
     var pairingCode by remember { mutableStateOf("") }
     var pairingId by remember { mutableStateOf("") }
-    var deviceName by remember { mutableStateOf(Build.MODEL ?: "Infinix-X6881") }
-    var rawModel by remember { mutableStateOf(Build.MODEL ?: "Infinix-X6881") }
+    var deviceName by remember { mutableStateOf(brandInfo.bestDisplayName) }
+    var rawModel by remember { mutableStateOf(brandInfo.marketingName ?: brandInfo.rawModel) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var pairedResponse by remember { mutableStateOf<PairDeviceResponse?>(null) }
     var isLoading by remember { mutableStateOf(false) }

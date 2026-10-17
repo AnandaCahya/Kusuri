@@ -136,6 +136,15 @@ data class LiveTelemetryDto(
     val screen_refresh_rate: Float? = null,
     val ip_address: String? = null,
     val network_type: String? = null,
+    val cpu_model: String? = null,
+    val cpu_cores: Int? = null,
+    val cpu_logical_cores: Int? = null,
+    val cpu_frequency_mhz: Long? = null,
+    val gpu_model: String? = null,
+    val hostname: String? = null,
+    val architecture: String? = null,
+    val uptime_formatted: String? = null,
+    val disks_info: String? = null,
     val updated_at: String? = null
 )
 
@@ -227,17 +236,50 @@ data class HardwareTelemetryRequest(
     val raw_model: String? = null,
     val imei1: String? = null,
     val imei2: String? = null,
+    val serial_number: String? = null,
     val ram_total_mb: Long,
     val ram_used_mb: Long,
+    val ram_free_mb: Long? = null,
     val storage_total_mb: Long,
     val storage_used_mb: Long,
+    val storage_free_mb: Long? = null,
     val battery_percent: Float,
     val battery_charging: Boolean,
     val battery_temp_c: Float,
+    val battery_health: String? = null,
     val os_version: String,
     val android_sdk: Int,
+    val kernel_version: String? = null,
     val screen_resolution: String? = null,
-    val screen_refresh_rate: Float? = null
+    val screen_refresh_rate: Float? = null,
+    val ip_address: String? = null,
+    val network_type: String? = null
+)
+
+@Serializable
+data class IngestNotificationRequest(
+    val device_id: String? = null,
+    val package_or_app_name: String,
+    val app_title: String? = null,
+    val title: String,
+    val content: String,
+    val subtext: String? = null,
+    val posted_at: String? = null
+)
+
+@Serializable
+data class NotificationResponse(
+    val id: String,
+    val user_id: String? = null,
+    val device_id: String? = null,
+    val device_name: String? = null,
+    val package_or_app_name: String,
+    val app_title: String? = null,
+    val title: String,
+    val content: String,
+    val subtext: String? = null,
+    val posted_at: String,
+    val created_at: String? = null
 )
 
 @Serializable

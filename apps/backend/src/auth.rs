@@ -224,3 +224,19 @@ pub async fn authenticate_token_against_db(
 
     Err(AppError::Unauthorized("Invalid authentication credentials".to_string()))
 }
+
+// Extractor for AuthCaller directly in Axum handler signatures
+impl FromRequestParts<std::sync::Arc<crate::AppState>> for AuthCaller {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &std::sync::Arc<crate::AppState>,
+    ) -> Result<Self, Self::Rejection> {
+        let token = extract_token_from_parts(parts)
+            .ok_or_else(|| AppError::Unauthorized("Missing authentication token".to_string()))?;
+
+        authenticate_token_against_db(&state.db, &state.config.jwt_secret, &token).await
+    }
+}
+

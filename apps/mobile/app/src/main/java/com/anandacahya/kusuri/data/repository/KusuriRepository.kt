@@ -207,4 +207,22 @@ class KusuriRepository(
             )
         }
     }
+
+    companion object {
+        @Volatile
+        private var instance: KusuriRepository? = null
+
+        fun getInstance(context: Context): KusuriRepository {
+            return instance ?: synchronized(this) {
+                instance ?: run {
+                    val appCtx = context.applicationContext
+                    val serverRepo = ServerRepository(appCtx)
+                    val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Default)
+                    KusuriRepository(appCtx, serverRepo, appScope).also {
+                        instance = it
+                    }
+                }
+            }
+        }
+    }
 }

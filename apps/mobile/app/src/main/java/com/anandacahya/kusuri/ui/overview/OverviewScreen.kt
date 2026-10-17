@@ -197,11 +197,20 @@ fun OverviewScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 deviceInfo?.let { info ->
-                    Text("Model: ${info.rawModel} (${info.brand})", style = MaterialTheme.typography.bodyMedium)
-                    Text("Sistem: ${info.androidVersion}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Perangkat: ${info.displayName}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    if (!info.marketingName.isNullOrBlank()) {
+                        Text("Model Asli: ${info.rawModel} (${info.product})", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (!info.socHardware.isNullOrBlank()) {
+                        Text("Chipset / SoC: ${info.socHardware}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("Sistem: ${info.androidVersion}${if (!info.kernelVersion.isNullOrBlank()) " (${info.kernelVersion})" else ""}", style = MaterialTheme.typography.bodyMedium)
                     Text("RAM: ${info.ramUsedMb} MB / ${info.ramTotalMb} MB (${((info.ramUsedMb.toFloat() / info.ramTotalMb) * 100).toInt()}%)", style = MaterialTheme.typography.bodyMedium)
                     Text("Penyimpanan: ${info.storageUsedMb} MB / ${info.storageTotalMb} MB", style = MaterialTheme.typography.bodyMedium)
-                    Text("Baterai: ${info.batteryPercent.toInt()}% (${if (info.batteryCharging) "Mengisi Daya" else "Baterai"}, ${info.batteryTempC} °C)", style = MaterialTheme.typography.bodyMedium)
+                    Text("Baterai: ${info.batteryPercent.toInt()}% (${if (info.batteryCharging) "Mengisi Daya" else "Baterai"}, ${info.batteryTempC} °C, ${info.batteryHealth})", style = MaterialTheme.typography.bodyMedium)
+                    if (!info.networkType.isNullOrBlank()) {
+                        Text("Jaringan: ${info.networkType}${if (!info.ipAddress.isNullOrBlank()) " • ${info.ipAddress}" else ""}", style = MaterialTheme.typography.bodySmall)
+                    }
                 } ?: CircularProgressIndicator()
 
                 if (syncStatusText != null) {
