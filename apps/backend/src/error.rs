@@ -28,6 +28,9 @@ pub enum AppError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Network error: {0}")]
+    Reqwest(#[from] reqwest::Error),
 }
 
 impl IntoResponse for AppError {
@@ -42,6 +45,13 @@ impl IntoResponse for AppError {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Database operation failed".to_string(),
+                )
+            }
+            AppError::Reqwest(err) => {
+                tracing::error!("Network request failed: {:?}", err);
+                (
+                    StatusCode::BAD_GATEWAY,
+                    format!("External service request failed: {}", err),
                 )
             }
             AppError::Internal(msg) => {

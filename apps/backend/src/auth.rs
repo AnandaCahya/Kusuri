@@ -135,27 +135,48 @@ fn extract_token_from_parts(parts: &Parts) -> Option<String> {
     None
 }
 
-// Extractor for User (JWT authenticated)
-impl<S> FromRequestParts<S> for AuthenticatedUser
-where
-    S: Send + Sync,
-{
+// Extractor for User (Authenticates either via JWT OR via paired Device Token `ksr_...`)
+impl FromRequestParts<std::sync::Arc<crate::AppState>> for AuthenticatedUser {
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &std::sync::Arc<crate::AppState>,
+    ) -> Result<Self, Self::Rejection> {
         let token = extract_token_from_parts(parts)
             .ok_or_else(|| AppError::Unauthorized("Missing authentication token".to_string()))?;
 
-        // Extract secret from environment or default
-        let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "kusuri_default_jwt_secret_change_me".to_string());
-        let claims = verify_jwt(&token, &secret)?;
-        let user_id = Uuid::parse_str(&claims.sub)
-            .map_err(|_| AppError::Unauthorized("Invalid user id in token".to_string()))?;
+        // 1. First, attempt to verify as user JWT
+        if let Ok(claims) = verify_jwt(&token, &state.config.jwt_secret) {
+            if let Ok(user_id) = Uuid::parse_str(&claims.sub) {
+                return Ok(AuthenticatedUser {
+                    user_id,
+                    username: claims.username,
+                });
+            }
+        }
 
-        Ok(AuthenticatedUser {
-            user_id,
-            username: claims.username,
-        })
+        // 2. If not a valid JWT, check if it matches a registered device_token (ksr_...)
+        let hashed = hash_token(&token);
+        let dev_opt = sqlx::query_as::<_, (Uuid, String)>(
+            r#"SELECT d.user_id, u.username
+               FROM devices d
+               JOIN users u ON d.user_id = u.id
+               WHERE d.token_hash = $1"#,
+        )
+        .bind(&hashed)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("Database error during device auth: {}", e)))?;
+
+        if let Some((user_id, username)) = dev_opt {
+            return Ok(AuthenticatedUser {
+                user_id,
+                username,
+            });
+        }
+
+        Err(AppError::Unauthorized("Invalid or expired authentication credentials".to_string()))
     }
 }
 

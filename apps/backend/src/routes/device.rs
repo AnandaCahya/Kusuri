@@ -219,6 +219,19 @@ pub async fn pair_device(
         }
     }
 
+    if specs_id.is_none() {
+        if let Some(ref model) = raw_model {
+            let clean_model = model.replace('-', " ");
+            if let Ok(specs) = get_or_fetch_gsmarena_specs(&state.db, &clean_model, retail_branding.as_deref()).await {
+                chipset = specs.chipset;
+                specs_id = Some(specs.id);
+                if marketing_name.is_none() {
+                    marketing_name = Some(specs.marketing_name);
+                }
+            }
+        }
+    }
+
     // Default display name: prefer marketing name (e.g. "Infinix HOT 50 Pro") over raw code name
     let device_name = if let Some(ref mkt) = marketing_name {
         mkt.clone()
@@ -266,9 +279,19 @@ pub async fn pair_device(
     .execute(&state.db)
     .await?;
 
+    // Look up username to generate a complementary JWT for the client
+    let user_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or_else(|_| "user".to_string());
+
+    let auth_token = crate::auth::create_jwt(&user_id, &user_name, &state.config.jwt_secret).ok();
+
     Ok(Json(PairDeviceResponse {
         device_id,
         device_token: raw_device_token, // Provided once to the client for local storage
+        auth_token,
         user_id,
         device_name,
         device_type,

@@ -70,6 +70,7 @@ pub struct PairDeviceRequest {
 pub struct PairDeviceResponse {
     pub device_id: Uuid,
     pub device_token: String,
+    pub auth_token: Option<String>,
     pub user_id: Uuid,
     pub device_name: String,
     pub device_type: String,
