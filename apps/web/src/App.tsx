@@ -10,6 +10,7 @@ import { MobileNav } from "./components/layout/MobileNav";
 import { AuthView } from "./views/AuthView";
 import { OverviewView } from "./views/OverviewView";
 import { DevicesView } from "./views/DevicesView";
+import { NotificationsView } from "./views/NotificationsView";
 import { PairDeviceView } from "./views/PairDeviceView";
 import { ClipboardView } from "./views/ClipboardView";
 import { FilesView } from "./views/FilesView";
@@ -41,6 +42,8 @@ function MainDashboard() {
         return <OverviewView onNavigate={setCurrentTab} />;
       case "devices":
         return <DevicesView onNavigate={setCurrentTab} />;
+      case "notifications":
+        return <NotificationsView />;
       case "pair":
         return <PairDeviceView onNavigate={setCurrentTab} />;
       case "clipboard":

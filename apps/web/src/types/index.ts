@@ -163,6 +163,20 @@ export interface SystemHealth {
 
 export type WsConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
+export interface DeviceNotification {
+  id: string;
+  user_id: string;
+  device_id?: string | null;
+  device_name?: string | null;
+  package_or_app_name: string;
+  app_title?: string | null;
+  title: string;
+  content: string;
+  subtext?: string | null;
+  posted_at: string;
+  created_at: string;
+}
+
 export type WsServerEvent =
   | { type: "pong" }
   | { type: "device_connected"; payload: { device_id: string; name: string; device_type: string } }
@@ -200,5 +214,7 @@ export type WsServerEvent =
         device_id: string;
       };
     }
+  | { type: "notification_ingested"; payload: DeviceNotification }
   | { type: "relay_event"; payload: { source_device_id?: string; event: string; data: any } }
   | { type: "error"; payload: { message: string } };
+

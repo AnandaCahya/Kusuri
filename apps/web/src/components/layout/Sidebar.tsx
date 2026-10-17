@@ -1,8 +1,8 @@
-import React from "react";
 import {
   LayoutDashboard,
   Smartphone,
   QrCode,
+  Bell,
   ClipboardList,
   FolderOpen,
   Terminal,
@@ -20,6 +20,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
   const mainNavItems = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "devices", label: "Perangkat", icon: Smartphone },
+    { id: "notifications", label: "Notifikasi", icon: Bell },
     { id: "pair", label: "Pair Device", icon: QrCode },
     { id: "clipboard", label: "Clipboard", icon: ClipboardList },
     { id: "files", label: "Berkas", icon: FolderOpen },

@@ -1,7 +1,7 @@
-import React from "react";
 import {
   LayoutDashboard,
   Smartphone,
+  Bell,
   QrCode,
   ClipboardList,
   FolderOpen,
@@ -18,6 +18,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentTab, onSelectTab })
   const items = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "devices", label: "Perangkat", icon: Smartphone },
+    { id: "notifications", label: "Notif", icon: Bell },
     { id: "pair", label: "Pair", icon: QrCode },
     { id: "clipboard", label: "Clip", icon: ClipboardList },
     { id: "files", label: "Berkas", icon: FolderOpen },

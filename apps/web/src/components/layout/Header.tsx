@@ -57,6 +57,8 @@ export const Header: React.FC<HeaderProps> = ({ currentTab }) => {
         return "Dashboard Ringkasan";
       case "devices":
         return "Manajemen Perangkat";
+      case "notifications":
+        return "Riwayat & Live Notifikasi";
       case "pair":
         return "Pair Perangkat Baru";
       case "clipboard":

@@ -262,4 +262,22 @@ export const api = {
       return request<SystemHealth>("/api/health", { method: "GET" });
     },
   },
+
+  notifications: {
+    async list(params?: {
+      device_id?: string;
+      search?: string;
+      limit?: number;
+    }): Promise<DeviceNotification[]> {
+      const query = new URLSearchParams();
+      if (params?.device_id) query.append("device_id", params.device_id);
+      if (params?.search) query.append("search", params.search);
+      if (params?.limit) query.append("limit", params.limit.toString());
+
+      const qs = query.toString() ? `?${query.toString()}` : "";
+      return request<DeviceNotification[]>(`/api/notifications${qs}`, {
+        method: "GET",
+      });
+    },
+  },
 };
