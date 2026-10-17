@@ -105,6 +105,19 @@ pub async fn enrich_device_and_store(
         }
     }
 
+    if specs_id.is_none() {
+        if let Some(raw_model) = &telemetry.raw_model {
+            let clean_model = raw_model.replace('-', " ");
+            if let Ok(specs) = get_or_fetch_gsmarena_specs(pool, &clean_model, retail_branding.as_deref()).await {
+                chipset = specs.chipset;
+                specs_id = Some(specs.id);
+                if marketing_name.is_none() {
+                    marketing_name = Some(specs.marketing_name);
+                }
+            }
+        }
+    }
+
     // Update devices table
     sqlx::query(
         r#"UPDATE devices 

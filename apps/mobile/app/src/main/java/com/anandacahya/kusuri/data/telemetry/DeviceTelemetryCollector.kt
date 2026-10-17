@@ -8,7 +8,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
-import com.anandacahya.kusuri.data.remote.HardwareTelemetryRequest
+import com.anandacahya.kusuri.data.model.HardwareTelemetryRequest
 
 data class DeviceInfoState(
     val rawModel: String,
@@ -22,8 +22,12 @@ data class DeviceInfoState(
     val storageUsedMb: Long,
     val batteryPercent: Float,
     val batteryCharging: Boolean,
-    val batteryTempC: Float
-)
+    val batteryTempC: Float,
+    val screenResolution: String = "",
+    val screenRefreshRate: Float = 60f
+) {
+    val sdkInt: Int get() = androidSdk
+}
 
 class DeviceTelemetryCollector(private val context: Context) {
 
@@ -31,7 +35,7 @@ class DeviceTelemetryCollector(private val context: Context) {
         val rawModel = Build.MODEL ?: "Unknown"
         val brand = Build.BRAND ?: "Unknown"
         val product = Build.PRODUCT ?: "Unknown"
-        val androidVersion = "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})"
+        val androidVersion = "Android ${Build.VERSION.RELEASE}"
         val sdk = Build.VERSION.SDK_INT
 
         // RAM Info
@@ -63,6 +67,18 @@ class DeviceTelemetryCollector(private val context: Context) {
         val tempRaw = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
         val batteryTempC = tempRaw / 10f
 
+        val dm = context.resources.displayMetrics
+        val screenRes = "${dm.widthPixels} x ${dm.heightPixels}"
+        val refreshRate = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                context.display?.refreshRate ?: 60.0f
+            } else {
+                60.0f
+            }
+        } catch (_: Exception) {
+            60.0f
+        }
+
         return DeviceInfoState(
             rawModel = rawModel,
             brand = brand,
@@ -75,7 +91,9 @@ class DeviceTelemetryCollector(private val context: Context) {
             storageUsedMb = storageUsedMb,
             batteryPercent = batteryPct,
             batteryCharging = isCharging,
-            batteryTempC = batteryTempC
+            batteryTempC = batteryTempC,
+            screenResolution = screenRes,
+            screenRefreshRate = refreshRate
         )
     }
 
@@ -93,7 +111,9 @@ class DeviceTelemetryCollector(private val context: Context) {
             battery_charging = info.batteryCharging,
             battery_temp_c = info.batteryTempC,
             os_version = info.androidVersion,
-            android_sdk = info.androidSdk
+            android_sdk = info.androidSdk,
+            screen_resolution = info.screenResolution,
+            screen_refresh_rate = info.screenRefreshRate
         )
     }
 }

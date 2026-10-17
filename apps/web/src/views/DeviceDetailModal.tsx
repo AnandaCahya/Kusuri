@@ -19,6 +19,8 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  ExternalLink,
+  CheckCircle2,
 } from "lucide-react";
 
 interface DeviceDetailModalProps {
@@ -63,8 +65,11 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({
 
   if (!device) return null;
 
-  const specs = specsData?.specs;
-  const telemetry = specsData?.telemetry;
+  const specs = specsData?.specs || specsData?.catalog_specs;
+  const telemetry = specsData?.telemetry || specsData?.live_hardware;
+  const imageUrl = specs?.picture_url || specs?.image_url;
+  const verifiedSources = specs?.raw_specs?.sources || (specs?.gsmarena_url ? ["GSM Arena"] : []);
+  const sourceUrls = specs?.raw_specs?.source_urls || (specs?.gsmarena_url ? { "GSM Arena": specs.gsmarena_url } : {});
 
   const ramTotalMb = telemetry?.ram_total_mb || 0;
   const ramUsedMb = telemetry?.ram_used_mb || 0;
@@ -86,9 +91,9 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({
         {/* Header Summary */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950/70 border border-slate-800">
           <div className="flex items-center gap-3">
-            {specs?.picture_url ? (
+            {imageUrl ? (
               <img
-                src={specs.picture_url}
+                src={imageUrl}
                 alt={device.name}
                 className="w-16 h-16 object-contain bg-slate-900 rounded-xl p-1 border border-slate-800"
               />
@@ -240,13 +245,44 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({
               </div>
             </div>
 
-            {/* GSM Arena Hardware Specs (Catalog Enricher) */}
+            {/* Collective Multi-Source Hardware Specs */}
             {specs ? (
               <div className="space-y-3">
-                <h5 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-                  Spesifikasi Resmi (Katalog Pabrikan & GSM Arena)
-                </h5>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h5 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                    Spesifikasi Kolektif Terverifikasi
+                  </h5>
+                  {verifiedSources.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Sumber:
+                      </span>
+                      {verifiedSources.map((src) => {
+                        const url = sourceUrls[src];
+                        return url ? (
+                          <a
+                            key={src}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                          >
+                            <span>{src}</span>
+                            <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                          </a>
+                        ) : (
+                          <span
+                            key={src}
+                            className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
+                          >
+                            {src}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   {specs.chipset && (
@@ -256,43 +292,62 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({
                     </div>
                   )}
 
-                  {specs.cpu && (
+                  {(specs.cpu || specs.gpu) && (
                     <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800">
                       <span className="text-slate-500 block">CPU & GPU</span>
-                      <span className="text-slate-200 font-medium">{specs.cpu} {specs.gpu ? `(${specs.gpu})` : ""}</span>
+                      <span className="text-slate-200 font-medium">
+                        {specs.cpu || "-"} {specs.gpu ? `(${specs.gpu})` : ""}
+                      </span>
                     </div>
                   )}
 
-                  {specs.display_type && (
+                  {(specs.display_type || specs.display_size || specs.display_resolution) && (
                     <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800">
                       <span className="text-slate-500 block">Layar</span>
                       <span className="text-slate-200 font-medium">
-                        {specs.display_type} • {specs.display_size}
+                        {[specs.display_type, specs.display_size, specs.display_resolution]
+                          .filter(Boolean)
+                          .join(" • ")}
                       </span>
                     </div>
                   )}
 
-                  {specs.main_camera && (
+                  {(specs.main_camera || specs.camera_spec) && (
                     <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800">
                       <span className="text-slate-500 block">Kamera Utama</span>
-                      <span className="text-slate-200 font-medium">{specs.main_camera}</span>
+                      <span className="text-slate-200 font-medium">{specs.main_camera || specs.camera_spec}</span>
                     </div>
                   )}
 
-                  {specs.battery_type && (
+                  {(specs.battery_type || specs.battery_spec) && (
                     <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800">
                       <span className="text-slate-500 block">Kapasitas Baterai Pabrik</span>
                       <span className="text-slate-200 font-medium">
-                        {specs.battery_type} {specs.battery_charging ? `(${specs.battery_charging})` : ""}
+                        {specs.battery_type || specs.battery_spec}{" "}
+                        {specs.battery_charging || specs.charging_spec ? `(${specs.battery_charging || specs.charging_spec})` : ""}
                       </span>
                     </div>
                   )}
 
-                  {specs.dimensions && (
+                  {specs.memory_spec && (
+                    <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800">
+                      <span className="text-slate-500 block">Pilihan RAM & Storage Pabrik</span>
+                      <span className="text-slate-200 font-medium">{specs.memory_spec}</span>
+                    </div>
+                  )}
+
+                  {specs.os_original && (
+                    <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800">
+                      <span className="text-slate-500 block">OS Asli Bawaan</span>
+                      <span className="text-slate-200 font-medium">{specs.os_original}</span>
+                    </div>
+                  )}
+
+                  {(specs.dimensions || specs.weight) && (
                     <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800">
                       <span className="text-slate-500 block">Dimensi & Berat</span>
                       <span className="text-slate-200 font-medium">
-                        {specs.dimensions} {specs.weight ? `• ${specs.weight}` : ""}
+                        {specs.dimensions || "-"} {specs.weight ? `• ${specs.weight}` : ""}
                       </span>
                     </div>
                   )}

@@ -41,9 +41,11 @@ export interface CreatePairingCodeRequest {
 }
 
 export interface GsmArenaSpecs {
-  id: string;
-  device_name: string;
-  brand: string;
+  id?: string;
+  device_name?: string;
+  marketing_name?: string;
+  brand?: string;
+  retail_branding?: string;
   chipset?: string | null;
   cpu?: string | null;
   gpu?: string | null;
@@ -51,12 +53,24 @@ export interface GsmArenaSpecs {
   display_size?: string | null;
   display_resolution?: string | null;
   main_camera?: string | null;
+  camera_spec?: string | null;
   selfie_camera?: string | null;
   battery_type?: string | null;
+  battery_spec?: string | null;
   battery_charging?: string | null;
+  charging_spec?: string | null;
   dimensions?: string | null;
   weight?: string | null;
+  memory_spec?: string | null;
+  os_original?: string | null;
   picture_url?: string | null;
+  image_url?: string | null;
+  gsmarena_url?: string | null;
+  raw_specs?: {
+    sources?: string[];
+    source_urls?: Record<string, string>;
+    details?: Record<string, string>;
+  } | null;
 }
 
 export interface LiveTelemetry {
@@ -76,14 +90,18 @@ export interface LiveTelemetry {
 
 export interface EnrichedDeviceSpecsResponse {
   device_id: string;
-  device_name: string;
+  device_name?: string;
+  name?: string;
   device_type: string;
   raw_model?: string | null;
   marketing_name?: string | null;
   retail_branding?: string | null;
   chipset?: string | null;
+  is_online?: boolean;
   specs?: GsmArenaSpecs | null;
+  catalog_specs?: GsmArenaSpecs | null;
   telemetry?: LiveTelemetry | null;
+  live_hardware?: LiveTelemetry | null;
 }
 
 export interface ClipboardItem {

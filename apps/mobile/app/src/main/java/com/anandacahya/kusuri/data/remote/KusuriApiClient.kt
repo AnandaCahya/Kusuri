@@ -1,142 +1,167 @@
 package com.anandacahya.kusuri.data.remote
 
-import com.anandacahya.kusuri.data.model.ServerConfig
-import kotlinx.serialization.Serializable
+import com.anandacahya.kusuri.data.model.*
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.http.*
-
-@Serializable
-data class AuthRequest(val username: String, val password: String)
-
-@Serializable
-data class AuthResponse(val token: String, val user: UserDto)
-
-@Serializable
-data class UserDto(val id: String, val username: String)
-
-@Serializable
-data class PairingCodeRequest(val device_name: String? = null, val device_type: String = "android")
-
-@Serializable
-data class PairingCodeResponse(
-    val pairing_id: String,
-    val code: String,
-    val expires_at: String,
-    val expires_in_seconds: Int,
-    val max_attempts: Int
-)
-
-@Serializable
-data class PairDeviceRequest(
-    val pairing_code: String,
-    val pairing_id: String? = null,
-    val device_name: String,
-    val device_type: String = "android",
-    val raw_model: String
-)
-
-@Serializable
-data class PairDeviceResponse(
-    val device_id: String,
-    val device_token: String,
-    val user_id: String,
-    val device_name: String,
-    val device_type: String,
-    val marketing_name: String?,
-    val chipset: String?
-)
-
-@Serializable
-data class ClipboardItemDto(
-    val id: String,
-    val content: String,
-    val content_type: String = "text/plain",
-    val source_device_name: String?,
-    val created_at: String
-)
-
-@Serializable
-data class CreateClipboardRequest(
-    val content: String,
-    val content_type: String = "text/plain"
-)
-
-@Serializable
-data class HardwareTelemetryRequest(
-    val raw_model: String,
-    val imei1: String? = null,
-    val imei2: String? = null,
-    val ram_total_mb: Long,
-    val ram_used_mb: Long,
-    val storage_total_mb: Long,
-    val storage_used_mb: Long,
-    val battery_percent: Float,
-    val battery_charging: Boolean,
-    val battery_temp_c: Float,
-    val os_version: String,
-    val android_sdk: Int
-)
+import java.util.concurrent.TimeUnit
 
 interface KusuriApiService {
     @GET("api/health")
-    suspend fun healthCheck(): Map<String, String>
+    suspend fun healthCheck(): SystemHealthDto
 
+    // Auth
     @POST("api/auth/register")
     suspend fun register(@Body request: AuthRequest): AuthResponse
 
     @POST("api/auth/login")
     suspend fun login(@Body request: AuthRequest): AuthResponse
 
+    @GET("api/auth/me")
+    suspend fun getMe(@Header("Authorization") authHeader: String? = null): UserDto
+
+    // Devices
     @POST("api/devices/pairing-code")
     suspend fun requestPairingCode(
-        @Header("Authorization") authHeader: String,
-        @Body request: PairingCodeRequest
+        @Header("Authorization") authHeader: String? = null,
+        @Body request: PairingCodeRequest = PairingCodeRequest()
     ): PairingCodeResponse
 
     @POST("api/devices/pair")
     suspend fun pairDevice(@Body request: PairDeviceRequest): PairDeviceResponse
 
     @GET("api/devices")
-    suspend fun getDevices(@Header("Authorization") authHeader: String): List<PairDeviceResponse>
+    suspend fun getDevices(@Header("Authorization") authHeader: String? = null): List<DeviceDto>
 
-    @GET("api/clipboard")
-    suspend fun getClipboard(@Header("Authorization") authHeader: String): List<ClipboardItemDto>
+    @GET("api/devices/{id}/specs")
+    suspend fun getDeviceSpecs(
+        @Path("id") deviceId: String,
+        @Header("Authorization") authHeader: String? = null
+    ): EnrichedDeviceSpecsResponse
 
-    @POST("api/clipboard")
-    suspend fun postClipboard(
-        @Header("Authorization") authHeader: String,
-        @Body request: CreateClipboardRequest
-    ): ClipboardItemDto
+    @PATCH("api/devices/{id}")
+    suspend fun updateDevice(
+        @Path("id") deviceId: String,
+        @Body request: UpdateDeviceRequest,
+        @Header("Authorization") authHeader: String? = null
+    ): Response<Unit>
+
+    @DELETE("api/devices/{id}")
+    suspend fun deleteDevice(
+        @Path("id") deviceId: String,
+        @Header("Authorization") authHeader: String? = null
+    ): Response<Unit>
+
+    @POST("api/devices/sync-catalog")
+    suspend fun syncCatalog(
+        @Header("Authorization") authHeader: String? = null
+    ): GenericMessageResponse
 
     @POST("api/devices/{id}/telemetry")
     suspend fun sendHardwareTelemetry(
-        @Header("Authorization") authHeader: String,
         @Path("id") deviceId: String,
-        @Body request: HardwareTelemetryRequest
-    ): kotlinx.serialization.json.JsonObject
+        @Body request: HardwareTelemetryRequest,
+        @Header("Authorization") authHeader: String? = null
+    ): EnrichedDeviceSpecsResponse
+
+    // Clipboard
+    @GET("api/clipboard")
+    suspend fun getClipboard(
+        @Header("Authorization") authHeader: String? = null
+    ): List<ClipboardItemDto>
+
+    @POST("api/clipboard")
+    suspend fun postClipboard(
+        @Body request: CreateClipboardRequest,
+        @Header("Authorization") authHeader: String? = null
+    ): ClipboardItemDto
+
+    @DELETE("api/clipboard/{id}")
+    suspend fun deleteClipboard(
+        @Path("id") id: String,
+        @Header("Authorization") authHeader: String? = null
+    ): Response<Unit>
+
+    // Files
+    @GET("api/files")
+    suspend fun getFiles(
+        @Header("Authorization") authHeader: String? = null
+    ): List<SharedFileDto>
+
+    @Multipart
+    @POST("api/files/upload")
+    suspend fun uploadFile(
+        @Part file: MultipartBody.Part,
+        @Part("target_device_id") targetDeviceId: RequestBody? = null,
+        @Header("Authorization") authHeader: String? = null
+    ): SharedFileDto
+
+    @DELETE("api/files/{id}")
+    suspend fun deleteFile(
+        @Path("id") id: String,
+        @Header("Authorization") authHeader: String? = null
+    ): Response<Unit>
+
+    @Streaming
+    @GET("api/files/{id}/download")
+    suspend fun downloadFile(
+        @Path("id") id: String,
+        @Header("Authorization") authHeader: String? = null
+    ): ResponseBody
+
+    // Commands
+    @GET("api/commands")
+    suspend fun getCommands(
+        @Header("Authorization") authHeader: String? = null
+    ): List<RemoteCommandDto>
+
+    @POST("api/commands")
+    suspend fun sendCommand(
+        @Body request: SendCommandRequest,
+        @Header("Authorization") authHeader: String? = null
+    ): RemoteCommandDto
+
+    @POST("api/commands/{id}/result")
+    suspend fun reportCommandResult(
+        @Path("id") commandId: String,
+        @Body request: CommandResultRequest,
+        @Header("Authorization") authHeader: String? = null
+    ): GenericMessageResponse
 }
 
 class KusuriApiClientFactory {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json = Json { 
+        ignoreUnknownKeys = true 
+        isLenient = true 
+        encodeDefaults = true
+    }
 
     fun createService(serverConfig: ServerConfig): KusuriApiService {
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.BASIC
         }
 
         val authInterceptor = Interceptor { chain ->
             val original = chain.request()
             val requestBuilder = original.newBuilder()
             
-            val token = serverConfig.deviceToken ?: serverConfig.authToken
-            if (!token.isNullOrBlank()) {
+            // Prefer user authToken if available, fallback to deviceToken
+            val token = serverConfig.authToken ?: serverConfig.deviceToken
+            if (!token.isNullOrBlank() && original.header("Authorization") == null) {
                 requestBuilder.header("Authorization", "Bearer $token")
+            }
+            if (!serverConfig.deviceToken.isNullOrBlank() && original.header("X-Device-Token") == null) {
+                requestBuilder.header("X-Device-Token", serverConfig.deviceToken)
             }
             chain.proceed(requestBuilder.build())
         }
@@ -144,10 +169,15 @@ class KusuriApiClientFactory {
         val client = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(logging)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
             .build()
 
+        val baseUrlNormalized = if (serverConfig.baseUrl.endsWith("/")) serverConfig.baseUrl else "${serverConfig.baseUrl}/"
+
         val retrofit = Retrofit.Builder()
-            .baseUrl(serverConfig.baseUrl.let { if (it.endsWith("/")) it else "$it/" })
+            .baseUrl(baseUrlNormalized)
             .client(client)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()

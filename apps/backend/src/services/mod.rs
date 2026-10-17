@@ -1,4 +1,9 @@
+pub mod devicespecifications;
 pub mod google_devices;
 pub mod gsmarena;
+pub mod matcher;
+pub mod nanoreview;
 pub mod rate_limiter;
+pub mod specs_aggregator;
 pub mod specs_enricher;
+pub mod wikipedia;

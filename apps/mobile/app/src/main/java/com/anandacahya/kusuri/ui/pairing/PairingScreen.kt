@@ -6,10 +6,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.anandacahya.kusuri.data.model.ServerConfig
+import com.anandacahya.kusuri.data.model.*
 import com.anandacahya.kusuri.data.remote.KusuriApiClientFactory
-import com.anandacahya.kusuri.data.remote.PairDeviceRequest
-import com.anandacahya.kusuri.data.remote.PairDeviceResponse
 import com.anandacahya.kusuri.data.repository.ServerRepository
 import kotlinx.coroutines.launch
 
@@ -151,6 +149,14 @@ fun PairingScreen(
                                 marketingName = response.marketing_name ?: response.device_name,
                                 chipset = response.chipset
                             )
+
+                            if (!response.auth_token.isNullOrBlank()) {
+                                serverRepository.updateTokens(
+                                    serverId = activeServer.id,
+                                    authToken = response.auth_token,
+                                    deviceToken = response.device_token
+                                )
+                            }
 
                             statusMessage = "Berhasil Paired sebagai '${response.marketing_name ?: response.device_name}'!"
                             isLoading = false

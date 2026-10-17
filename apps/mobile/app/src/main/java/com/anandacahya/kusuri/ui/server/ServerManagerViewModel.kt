@@ -43,7 +43,7 @@ class ServerManagerViewModel(application: Application) : AndroidViewModel(applic
         return try {
             val service = apiClientFactory.createService(server)
             val health = service.healthCheck()
-            health["status"] == "healthy"
+            health.status == "healthy"
         } catch (e: Exception) {
             false
         }
