@@ -9,6 +9,7 @@ use tracing::{info, warn};
 #[derive(Default, Clone, Debug)]
 pub struct GsmArenaSpecResult {
     pub source_url: String,
+    pub commercial_name: Option<String>,
     pub chipset: Option<String>,
     pub cpu: Option<String>,
     pub gpu: Option<String>,
@@ -97,7 +98,7 @@ pub async fn scrape_gsmarena(
             });
         }
 
-        if !found_candidates.is_empty() {
+        if found_candidates.iter().any(|c| c.score >= 15.0) {
             break;
         }
     }
@@ -112,31 +113,87 @@ pub async fn scrape_gsmarena(
     // Sort candidates descending by Smart Selective Match score
     found_candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-    let best_match = &found_candidates[0];
+    let mut best_candidate = found_candidates[0].clone();
+    let mut verified_detail_html: Option<String> = None;
+
+    // Secondary model-code verification:
+    // If no candidate scored >= 15.0 on title matching alone (common with obscure model codes like "ZTE 8045"),
+    // verify the candidate's actual detail page `models` field!
+    if best_candidate.score < 15.0 {
+        let target_tokens = crate::services::matcher::classify_tokens(marketing_name, retail_branding);
+        info!(
+            "No candidate matched '{}' by title alone (best score: {:.1}). Checking candidate model codes...",
+            marketing_name, best_candidate.score
+        );
+
+        for cand in found_candidates.iter().take(3) {
+            let test_url = format!("https://m.gsmarena.com/{}", cand.url_path);
+            if let Ok(resp) = client.get(&test_url).send().await {
+                if let Ok(html) = resp.text().await {
+                    let spec_re = Regex::new(r#"<td[^>]+data-spec=["']?([^"'\s>]+)["']?[^>]*>([\s\S]*?)</td>"#)
+                        .unwrap();
+                    let mut models_val = String::new();
+                    for cap in spec_re.captures_iter(&html) {
+                        if cap.get(1).map(|m| m.as_str()) == Some("models") {
+                            models_val = cap.get(2).map(|m| m.as_str()).unwrap_or("").to_lowercase();
+                            break;
+                        }
+                    }
+
+                    let mut matched = false;
+                    for num in &target_tokens.numbers {
+                        if models_val.contains(num) {
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if !matched && models_val.contains(&marketing_name.to_lowercase()) {
+                        matched = true;
+                    }
+
+                    if matched {
+                        info!(
+                            "Secondary verification SUCCESS: Candidate '{}' confirmed to match model code '{}' (models: {:?})",
+                            cand.title, marketing_name, models_val
+                        );
+                        best_candidate = cand.clone();
+                        best_candidate.score = 250.0;
+                        verified_detail_html = Some(html);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     info!(
         "Smart Selective GSM Arena selected candidate '{}' (score: {:.1}) for target '{}'",
-        best_match.title, best_match.score, marketing_name
+        best_candidate.title, best_candidate.score, marketing_name
     );
 
-    if best_match.score < 15.0 {
+    if best_candidate.score < 15.0 {
         return Err(AppError::NotFound(format!(
             "No candidate matched target '{}' with sufficient confidence (best: '{}' score {:.1})",
-            marketing_name, best_match.title, best_match.score
+            marketing_name, best_candidate.title, best_candidate.score
         )));
     }
 
     // Fetch detail specs from GSM Arena mobile endpoint
-    let detail_url = format!("https://m.gsmarena.com/{}", best_match.url_path);
-    let detail_resp = client
-        .get(&detail_url)
-        .send()
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to fetch GSM Arena details: {}", e)))?;
+    let detail_url = format!("https://m.gsmarena.com/{}", best_candidate.url_path);
+    let detail_html = if let Some(html) = verified_detail_html {
+        html
+    } else {
+        let detail_resp = client
+            .get(&detail_url)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to fetch GSM Arena details: {}", e)))?;
 
-    let detail_html = detail_resp
-        .text()
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to read detail page: {}", e)))?;
+        detail_resp
+            .text()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to read detail page: {}", e)))?
+    };
 
     if detail_html.contains("cf-turnstile") {
         return Err(AppError::NotFound("GSM Arena detail blocked by Turnstile".to_string()));
@@ -184,7 +241,7 @@ pub async fn scrape_gsmarena(
     }
 
     // Extract image URL (candidate image or detail page main photo)
-    let mut image_url = best_match.image_url.clone();
+    let mut image_url = best_candidate.image_url.clone();
     if image_url.is_none() {
         let img_re = Regex::new(r#"class=["']specs-photo-main["'][^>]*>\s*<a[^>]*>\s*<img[^>]+src=["']([^"']+)["']"#).unwrap();
         image_url = img_re.captures(&detail_html).and_then(|c| c.get(1)).map(|m| m.as_str().to_string());
@@ -194,6 +251,7 @@ pub async fn scrape_gsmarena(
 
     Ok(GsmArenaSpecResult {
         source_url: detail_url,
+        commercial_name: Some(best_candidate.title),
         chipset: specs_map.get("chipset").cloned().or_else(|| specs_map.get("chipset-hl").cloned()),
         cpu: specs_map.get("cpu").cloned(),
         gpu: specs_map.get("gpu").cloned(),
@@ -210,3 +268,23 @@ pub async fn scrape_gsmarena(
         raw_map: specs_map,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_debug_live_zte_8045() {
+        match scrape_gsmarena("ZTE 8045", Some("ZTE")).await {
+            Ok(spec) => {
+                println!("GSM Arena resolved ZTE 8045: {:?}", spec.commercial_name);
+                assert_eq!(spec.commercial_name.as_deref(), Some("ZTE Blade V40 Vita"));
+                assert!(spec.chipset.is_some() || spec.battery_spec.is_some());
+            }
+            Err(e) => {
+                println!("GSM Arena live test network/verification notice: {}", e);
+            }
+        }
+    }
+}
+

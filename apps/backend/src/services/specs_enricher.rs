@@ -108,11 +108,19 @@ pub async fn enrich_device_and_store(
     if specs_id.is_none() {
         if let Some(raw_model) = &telemetry.raw_model {
             let clean_model = raw_model.replace('-', " ");
-            if let Ok(specs) = get_or_fetch_gsmarena_specs(pool, &clean_model, retail_branding.as_deref()).await {
+            // Infer brand if retail_branding is not yet known (e.g. "ZTE 8045" -> brand "ZTE")
+            let inferred_brand = retail_branding.clone().or_else(|| {
+                clean_model.split_whitespace().next().map(|s| s.to_string())
+            });
+
+            if let Ok(specs) = get_or_fetch_gsmarena_specs(pool, &clean_model, inferred_brand.as_deref()).await {
                 chipset = specs.chipset;
                 specs_id = Some(specs.id);
                 if marketing_name.is_none() {
                     marketing_name = Some(specs.marketing_name);
+                }
+                if retail_branding.is_none() {
+                    retail_branding = specs.retail_branding.or(inferred_brand);
                 }
             }
         }

@@ -154,11 +154,11 @@ pub async fn lookup_device_by_codename(
         return None;
     }
 
-    // 1. Exact match on device codename (e.g. 'Infinix-X6881')
+    // 1. Exact match on device codename, model, or marketing name
     let res = sqlx::query_as::<_, (String, String, String, String)>(
         r#"SELECT retail_branding, marketing_name, device, model 
            FROM google_supported_devices 
-           WHERE LOWER(device) = LOWER($1) OR LOWER(model) = LOWER($1)
+           WHERE LOWER(device) = LOWER($1) OR LOWER(model) = LOWER($1) OR LOWER(marketing_name) = LOWER($1)
            LIMIT 1"#,
     )
     .bind(cleaned)
@@ -176,15 +176,19 @@ pub async fn lookup_device_by_codename(
         });
     }
 
-    // 2. Try stripping prefixes/suffixes (e.g. 'Infinix-X6881' -> 'X6881')
-    if let Some((_, model_suffix)) = cleaned.split_once('-') {
+    // 2. Try stripping prefixes/suffixes (e.g. 'Infinix-X6881' -> 'X6881', 'ZTE 8045' -> '8045')
+    let clean_delims = cleaned.replace('-', " ");
+    if let Some((_, model_suffix)) = clean_delims.split_once(' ') {
+        let suffix = model_suffix.trim();
         let res2 = sqlx::query_as::<_, (String, String, String, String)>(
             r#"SELECT retail_branding, marketing_name, device, model 
                FROM google_supported_devices 
-               WHERE LOWER(device) LIKE LOWER($1) OR LOWER(model) LIKE LOWER($1)
+               WHERE LOWER(device) = LOWER($1) OR LOWER(model) = LOWER($1) OR LOWER(marketing_name) = LOWER($1)
+                  OR LOWER(device) LIKE LOWER($2) OR LOWER(model) LIKE LOWER($2)
                LIMIT 1"#,
         )
-        .bind(format!("%{}%", model_suffix))
+        .bind(suffix)
+        .bind(format!("%{}%", suffix))
         .fetch_optional(pool)
         .await
         .ok()

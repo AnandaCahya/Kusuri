@@ -89,6 +89,7 @@ pub async fn get_or_fetch_gsmarena_specs(
     // ---------------------------------------------------------------------------------------------
     // SOURCE 1: GSM Arena (Primary Mobile Engine with Smart Selective Matching)
     // ---------------------------------------------------------------------------------------------
+    let mut resolved_alias: Option<String> = None;
     match scrape_gsmarena(clean_name, retail_branding).await {
         Ok(gsm) => {
             // Validation: ensure GSM Arena result did not match a conflicting year
@@ -102,11 +103,15 @@ pub async fn get_or_fetch_gsmarena_specs(
             }
 
             if is_valid {
-                info!("Verified and collected specifications from GSM Arena for '{}'", clean_name);
+                info!("Verified and collected specifications from GSM Arena for '{}' (commercial: {:?})", clean_name, gsm.commercial_name);
                 collective.verified_sources.push("GSM Arena".to_string());
                 collective.source_urls.insert("GSM Arena".to_string(), gsm.source_url.clone());
                 if collective.source_url.is_none() {
                     collective.source_url = Some(gsm.source_url);
+                }
+
+                if let Some(ref comm) = gsm.commercial_name {
+                    resolved_alias = Some(comm.clone());
                 }
 
                 merge_if_empty(&mut collective.chipset, gsm.chipset);
@@ -132,12 +137,15 @@ pub async fn get_or_fetch_gsmarena_specs(
         }
     }
 
+    // Determine query name for subsequent sources: use resolved commercial name if available (e.g. "ZTE Blade V40 Vita")
+    let target_for_catalogs = resolved_alias.as_deref().unwrap_or(clean_name);
+
     // ---------------------------------------------------------------------------------------------
     // SOURCE 2: NanoReview (Technical Benchmark & Architecture Engine)
     // ---------------------------------------------------------------------------------------------
-    match scrape_nanoreview(clean_name, retail_branding).await {
+    match scrape_nanoreview(target_for_catalogs, retail_branding).await {
         Ok(nano) => {
-            info!("Verified and collected specifications from NanoReview for '{}'", clean_name);
+            info!("Verified and collected specifications from NanoReview for '{}'", target_for_catalogs);
             collective.verified_sources.push("NanoReview".to_string());
             collective.source_urls.insert("NanoReview".to_string(), nano.source_url.clone());
 
@@ -158,16 +166,16 @@ pub async fn get_or_fetch_gsmarena_specs(
             }
         }
         Err(e) => {
-            info!("NanoReview source lookup for '{}' notice: {}", clean_name, e);
+            info!("NanoReview source lookup for '{}' notice: {}", target_for_catalogs, e);
         }
     }
 
     // ---------------------------------------------------------------------------------------------
     // SOURCE 3: DeviceSpecifications (Hardware Catalog Engine)
     // ---------------------------------------------------------------------------------------------
-    match scrape_devicespecifications(clean_name, retail_branding).await {
+    match scrape_devicespecifications(target_for_catalogs, retail_branding).await {
         Ok(ds) => {
-            info!("Verified and collected specifications from DeviceSpecifications for '{}'", clean_name);
+            info!("Verified and collected specifications from DeviceSpecifications for '{}'", target_for_catalogs);
             collective.verified_sources.push("DeviceSpecifications".to_string());
             collective.source_urls.insert("DeviceSpecifications".to_string(), ds.source_url.clone());
 
@@ -175,16 +183,20 @@ pub async fn get_or_fetch_gsmarena_specs(
             merge_if_empty(&mut collective.cpu, ds.cpu);
             merge_if_empty(&mut collective.gpu, ds.gpu);
             merge_if_empty(&mut collective.display_type, ds.display_type);
+            merge_if_empty(&mut collective.display_size, ds.display_size);
+            merge_if_empty(&mut collective.display_resolution, ds.display_resolution);
             merge_if_empty(&mut collective.battery_spec, ds.battery_spec);
             merge_if_empty(&mut collective.camera_spec, ds.camera_spec);
+            merge_if_empty(&mut collective.memory_spec, ds.memory_spec);
             merge_if_empty(&mut collective.os_original, ds.os_original);
+            merge_if_empty(&mut collective.image_url, ds.image_url);
 
             for (k, v) in ds.raw_map {
                 collective.raw_map.insert(format!("ds_{}", k), v);
             }
         }
         Err(e) => {
-            info!("DeviceSpecifications lookup for '{}' notice: {}", clean_name, e);
+            info!("DeviceSpecifications lookup for '{}' notice: {}", target_for_catalogs, e);
         }
     }
 
@@ -192,9 +204,9 @@ pub async fn get_or_fetch_gsmarena_specs(
     // SOURCE 4: Wikipedia (Fallback Open Source Infobox Engine)
     // ---------------------------------------------------------------------------------------------
     if collective.chipset.is_none() && collective.display_type.is_none() {
-        match fetch_from_wikipedia(clean_name, retail_branding).await {
+        match fetch_from_wikipedia(target_for_catalogs, retail_branding).await {
             Ok(wiki) => {
-                info!("Verified and collected specifications from Wikipedia for '{}'", clean_name);
+                info!("Verified and collected specifications from Wikipedia for '{}'", target_for_catalogs);
                 collective.verified_sources.push("Wikipedia".to_string());
                 collective.source_urls.insert("Wikipedia".to_string(), wiki.source_url.clone());
 
@@ -214,7 +226,7 @@ pub async fn get_or_fetch_gsmarena_specs(
                 }
             }
             Err(e) => {
-                info!("Wikipedia lookup for '{}' notice: {}", clean_name, e);
+                info!("Wikipedia lookup for '{}' notice: {}", target_for_catalogs, e);
             }
         }
     }
@@ -225,6 +237,7 @@ pub async fn get_or_fetch_gsmarena_specs(
     let raw_payload = serde_json::json!({
         "sources": collective.verified_sources,
         "source_urls": collective.source_urls,
+        "commercial_name": resolved_alias,
         "details": collective.raw_map,
     });
 
