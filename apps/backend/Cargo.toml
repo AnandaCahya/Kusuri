@@ -29,4 +29,4 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { version = "1.28.0", features = ["v4", "serde"] }
 aes = "0.8"
 cbc = "0.1"
-base64 = "0.22"
+base64 = "0.23"
